@@ -1,254 +1,124 @@
 #!/bin/bash
 
-# Define variables
-PROJECT_NAME="godmode"
-API_KEY="your_openai_api_key_here"  # Replace with your actual OpenAI API key
-DOCKERFILE_CONTENT=$(cat <<'EOF'
-# Base image
-FROM python:3.9-slim
+# Initial welcome message
+echo "Welcome to the Godmode Project Setup"
+echo "Please provide the following details to configure your system."
 
-# Set environment variables
-ENV PYTHONUNBUFFERED 1
+# Prompt for user details required for setup
+read -p "Enter the project name: " PROJECT_NAME
+read -p "Enter the domain (e.g., example.com): " DOMAIN
+read -p "Enter the server IP address: " SERVER_IP
+read -p "Enter the database name: " DB_NAME
+read -p "Enter the database user: " DB_USER
+read -sp "Enter the database password: " DB_PASSWORD
+echo # For a new line after entering the password
+read -p "Enter the admin email: " ADMIN_EMAIL
 
-# Create and set working directory
-WORKDIR /app
+# Optional settings
+read -p "Enable HTTPS (yes/no)? " ENABLE_HTTPS
+read -p "Setup VPN (yes/no)? " SETUP_VPN
 
-# Copy the requirements file
-COPY requirements.txt /app/
+# Prompts for personalized AI setup
+echo
+echo "===== AI Setup Configuration ====="
+read -p "Enter the AI model you want to use (e.g., GPT-3, BERT): " AI_MODEL
+read -p "Enter the AI API key (if applicable): " AI_API_KEY
+read -p "Enter the number of AI threads or workers (default 4): " AI_WORKERS
+read -p "Enable logging for AI interactions (yes/no)? " ENABLE_AI_LOGGING
 
-# Install dependencies
-RUN pip install --upgrade pip && pip install -r requirements.txt
+# Display a summary of the collected input
+echo
+echo "===== Configuration Summary ====="
+echo "Project Name: $PROJECT_NAME"
+echo "Domain: $DOMAIN"
+echo "Server IP: $SERVER_IP"
+echo "Database Name: $DB_NAME"
+echo "Database User: $DB_USER"
+echo "Admin Email: $ADMIN_EMAIL"
+echo "Enable HTTPS: $ENABLE_HTTPS"
+echo "Setup VPN: $SETUP_VPN"
+echo "AI Model: $AI_MODEL"
+echo "AI API Key: $AI_API_KEY"
+echo "AI Workers: $AI_WORKERS"
+echo "Enable AI Logging: $ENABLE_AI_LOGGING"
+echo "=================================="
+echo
 
-# Copy the application code
-COPY . /app/
-
-# Expose port 5000
-EXPOSE 5000
-
-# Run the application
-CMD ["python", "app.py"]
+# Write the configuration to a file (optional)
+cat <<EOF > godmode_config.txt
+PROJECT_NAME=$PROJECT_NAME
+DOMAIN=$DOMAIN
+SERVER_IP=$SERVER_IP
+DB_NAME=$DB_NAME
+DB_USER=$DB_USER
+DB_PASSWORD=$DB_PASSWORD
+ADMIN_EMAIL=$ADMIN_EMAIL
+ENABLE_HTTPS=$ENABLE_HTTPS
+SETUP_VPN=$SETUP_VPN
+AI_MODEL=$AI_MODEL
+AI_API_KEY=$AI_API_KEY
+AI_WORKERS=${AI_WORKERS:-4}
+ENABLE_AI_LOGGING=$ENABLE_AI_LOGGING
 EOF
-)
 
-REQUIREMENTS_CONTENT=$(cat <<'EOF'
-Flask==2.0.2
-openai==0.10.0
-sqlite3==0.9.6
-EOF
-)
+echo "Configuration saved to godmode_config.txt"
 
-APP_PY_CONTENT=$(cat <<'EOF'
-from flask import Flask, render_template, request, jsonify
-import openai
-import sqlite3
-from sqlite3 import Error
+# Proceed with the actual setup steps
 
-app = Flask(__name__)
+# Update package list and install necessary tools (example)
+echo "Updating system and installing dependencies..."
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y docker docker-compose mysql-client
 
-# Set your OpenAI API key
-openai.api_key = "$OPENAI_API_KEY"
+# Set up the database
+echo "Setting up the database..."
+sudo mysql -u root -p -e "CREATE DATABASE $DB_NAME;"
+sudo mysql -u root -p -e "CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';"
+sudo mysql -u root -p -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';"
+sudo mysql -u root -p -e "FLUSH PRIVILEGES;"
 
-# Database setup
-def create_connection():
-    connection = None
-    try:
-        connection = sqlite3.connect("godmode_users.db")
-        print("Connection to SQLite DB successful")
-    except Error as e:
-        print(f"The error '{e}' occurred")
-    return connection
+# Set up HTTPS if the user enabled it
+if [ "$ENABLE_HTTPS" == "yes" ]; then
+  echo "Configuring HTTPS using Let's Encrypt..."
+  sudo apt install -y certbot python3-certbot-nginx
+  sudo certbot --nginx -d $DOMAIN --email $ADMIN_EMAIL --agree-tos --non-interactive
+  sudo systemctl restart nginx
+else
+  echo "Skipping HTTPS setup."
+fi
 
-# Create users table
-def create_table(connection):
-    create_users_table = """
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT NOT NULL UNIQUE,
-        preferences TEXT
-    );
-    """
-    try:
-        cursor = connection.cursor()
-        cursor.execute(create_users_table)
-        print("Table creation successful")
-    except Error as e:
-        print(f"The error '{e}' occurred")
+# Set up VPN if the user enabled it
+if [ "$SETUP_VPN" == "yes" ]; then
+  echo "Setting up a VPN server..."
+  # Insert VPN setup commands, such as OpenVPN or WireGuard
+  sudo apt install -y openvpn
+  echo "VPN setup is complete."
+else
+  echo "Skipping VPN setup."
+fi
 
-# Initialize DB
-connection = create_connection()
-create_table(connection)
+# Set up the AI environment
+echo "Setting up AI environment for $AI_MODEL..."
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+# Check for Docker-based AI environment, or proceed with API setup if using cloud-based AI
+if [ "$AI_MODEL" == "GPT-3" ] || [ "$AI_MODEL" == "BERT" ]; then
+  echo "Installing required AI dependencies..."
 
-@app.route('/ask', methods=['POST'])
-def ask():
-    data = request.json
-    username = data.get('username')
-    prompt = data.get('prompt', '')
+  # AI setup using Docker (example)
+  sudo docker pull <ai_model_image_based_on_choice>
+  sudo docker run -d --name ai_service -p 5000:5000 <ai_model_image_based_on_choice> \
+      --api-key $AI_API_KEY --workers ${AI_WORKERS:-4}
+  
+  echo "$AI_MODEL service is running with $AI_WORKERS workers."
 
-    # Retrieve user preferences if they exist
-    cursor = connection.cursor()
-    cursor.execute("SELECT preferences FROM users WHERE username=?", (username,))
-    user_data = cursor.fetchone()
+  # Enable logging if the user opted for it
+  if [ "$ENABLE_AI_LOGGING" == "yes" ]; then
+    echo "Enabling AI interaction logging..."
+    # Example log setup
+    sudo docker logs -f ai_service > /var/log/ai_service.log &
+  fi
+else
+  echo "AI model setup is not recognized or not supported in Docker. Please configure manually."
+fi
 
-    # Modify prompt based on user preferences
-    if user_data:
-        preferences = user_data[0]
-        prompt = f"{preferences}\n{prompt}"
-
-    # Call OpenAI GPT-3 API
-    response = openai.Completion.create(
-        engine="text-davinci-003",
-        prompt=prompt,
-        max_tokens=100
-    )
-
-    return jsonify({'response': response.choices[0].text.strip()})
-
-@app.route('/save_preferences', methods=['POST'])
-def save_preferences():
-    data = request.json
-    username = data.get('username')
-    preferences = data.get('preferences')
-
-    # Insert or update user preferences in the database
-    cursor = connection.cursor()
-    cursor.execute("SELECT id FROM users WHERE username=?", (username,))
-    user_exists = cursor.fetchone()
-
-    if user_exists:
-        cursor.execute("UPDATE users SET preferences=? WHERE username=?", (preferences, username))
-    else:
-        cursor.execute("INSERT INTO users (username, preferences) VALUES (?, ?)", (username, preferences))
-
-    connection.commit()
-    return jsonify({'message': 'Preferences saved successfully'})
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
-EOF
-)
-
-INDEX_HTML_CONTENT=$(cat <<'EOF'
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Godmode AI Interface</title>
-</head>
-<body>
-    <h1>Godmode AI Interface</h1>
-
-    <!-- Username input for personalization -->
-    <input type="text" id="username" placeholder="Enter your username"><br><br>
-
-    <!-- Textarea for entering questions to ask the AI -->
-    <textarea id="prompt" placeholder="Enter your question..." rows="4" cols="50"></textarea><br>
-
-    <button onclick="askAI()">Ask AI</button>
-
-    <h2>Response:</h2>
-    <pre id="response"></pre>
-
-    <hr>
-
-    <!-- Section to update user preferences -->
-    <h2>Update Preferences</h2>
-    <textarea id="preferences" placeholder="Enter your preferences..." rows="4" cols="50"></textarea><br>
-    <button onclick="savePreferences()">Save Preferences</button>
-
-    <script>
-        function askAI() {
-            const prompt = document.getElementById("prompt").value;
-            const username = document.getElementById("username").value;
-
-            fetch("/ask", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ prompt, username })
-            })
-            .then(response => response.json())
-            .then(data => {
-                document.getElementById("response").textContent = data.response;
-            });
-        }
-
-        function savePreferences() {
-            const preferences = document.getElementById("preferences").value;
-            const username = document.getElementById("username").value;
-
-            fetch("/save_preferences", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ preferences, username })
-            })
-            .then(response => response.json())
-            .then(data => {
-                alert(data.message);
-            });
-        }
-    </script>
-</body>
-</html>
-EOF
-)
-
-DOCKER_COMPOSE_CONTENT=$(cat <<EOF
-version: '3'
-
-services:
-  godmode:
-    build: ./containers
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./web:/app/templates
-    environment:
-      - OPENAI_API_KEY=$API_KEY
-EOF
-)
-
-# Step 1: Create Project Directory
-echo "Creating project directories..."
-mkdir -p $PROJECT_NAME/containers $PROJECT_NAME/config $PROJECT_NAME/web
-
-# Step 2: Create Dockerfile
-echo "Writing Dockerfile..."
-echo "$DOCKERFILE_CONTENT" > $PROJECT_NAME/containers/Dockerfile
-
-# Step 3: Create requirements.txt
-echo "Writing requirements.txt..."
-echo "$REQUIREMENTS_CONTENT" > $PROJECT_NAME/containers/requirements.txt
-
-# Step 4: Create app.py (backend logic)
-echo "Writing app.py..."
-echo "$APP_PY_CONTENT" | sed "s/\$OPENAI_API_KEY/$API_KEY/" > $PROJECT_NAME/containers/app.py
-
-# Step 5: Create index.html (frontend UI)
-echo "Writing index.html..."
-echo "$INDEX_HTML_CONTENT" > $PROJECT_NAME/web/index.html
-
-# Step 6: Create docker-compose.yml
-echo "Writing docker-compose.yml..."
-echo "$DOCKER_COMPOSE_CONTENT" > $PROJECT_NAME/docker-compose.yml
-
-# Step 7: Navigate to project directory
-cd $PROJECT_NAME
-
-# Step 8: Build Docker container
-echo "Building Docker container..."
-docker-compose build
-
-# Step 9: Start Docker container
-echo "Starting Docker container..."
-docker-compose up -d
-
-# Step 10: Inform the user
-echo "Godmode setup is complete. Access the web interface at http://localhost:5000"
+echo "Godmode Project setup is complete, including AI configuration!"
