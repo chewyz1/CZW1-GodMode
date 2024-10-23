@@ -1,5 +1,6 @@
 #!/bin/bash
 
+
 # Define variables
 PROJECT_NAME="godmode"
 API_KEY="your_openai_api_key_here"  # Replace with your actual OpenAI API key
